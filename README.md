@@ -36,25 +36,25 @@ A full-stack system combining financial analytics, valuation, backtesting, and a
 ## 🖥️ UI Preview
 
 ### Dashboard
-![Dashboard](./assets/dashboard.png)
+![Dashboard](/assets/dashboard.png)
 
 ### Chat Panel
-![Chat Panel](./assets/chat_panel.png)
+![Chat Panel](/assets/chat_panel.png)
 
 ### Backtesting Panel
-![Backtesting](./assets/backtesting_panel.png)
+![Backtesting](/assets/backtesting_panel.png)
 
 ### Valuation Panel
-![Valuation](./assets/valuation_panel.png)
+![Valuation](/assets/valuation_panel.png)
 
 ### Trend Charts
-![Trends](./assets/trend_charts.png)
+![Trends](/assets/trend_charts.png)
 
 ### Peer Ranking
-![Ranking](./assets/peer_ranking.png)
+![Ranking](/assets/peer_ranking.png)
 
 ### Ticker Lookup
-![Lookup](./assets/ticker_lookup.png)
+![Lookup](/assets/ticker_lookup.png)
 
 ---
 
