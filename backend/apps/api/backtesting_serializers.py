@@ -91,29 +91,46 @@ class BacktestRunRequestSerializer(serializers.Serializer):
                 "sell_tolerance_pct": sell_tolerance_pct,
             }
             return attrs
+
         if strategy_type == "momentum":
             lookback_window = int(config_json.get("lookback_window", 90))
+            breakout_threshold_pct = float(config_json.get("breakout_threshold_pct", 0.0))
+            exit_lookback_window = int(config_json.get("exit_lookback_window", max(5, lookback_window // 2)))
             top_n = int(config_json.get("top_n", 1))
+
             if lookback_window <= 1:
                 raise serializers.ValidationError("lookback_window must be greater than 1.")
+            if exit_lookback_window <= 1:
+                raise serializers.ValidationError("exit_lookback_window must be greater than 1.")
+            if breakout_threshold_pct < 0:
+                raise serializers.ValidationError("breakout_threshold_pct must be non-negative.")
             if top_n <= 0:
                 raise serializers.ValidationError("top_n must be positive.")
+
             attrs["config_json"] = {
                 "lookback_window": lookback_window,
+                "breakout_threshold_pct": breakout_threshold_pct,
+                "exit_lookback_window": exit_lookback_window,
                 "top_n": top_n,
             }
             return attrs
 
         if strategy_type == "mean_reversion":
             lookback_window = int(config_json.get("lookback_window", 20))
+            mean_window = int(config_json.get("mean_window", lookback_window))
+            std_window = int(config_json.get("std_window", lookback_window))
             z_entry = float(config_json.get("z_entry", 1.5))
             z_exit = float(config_json.get("z_exit", 0.25))
-            if lookback_window <= 1:
-                raise serializers.ValidationError("lookback_window must be greater than 1.")
+
+            if mean_window <= 1 or std_window <= 1:
+                raise serializers.ValidationError("mean_window and std_window must be greater than 1.")
             if z_entry <= 0 or z_exit < 0:
                 raise serializers.ValidationError("z_entry must be positive and z_exit must be non-negative.")
+
             attrs["config_json"] = {
                 "lookback_window": lookback_window,
+                "mean_window": mean_window,
+                "std_window": std_window,
                 "z_entry": z_entry,
                 "z_exit": z_exit,
             }
@@ -124,8 +141,16 @@ class BacktestRunRequestSerializer(serializers.Serializer):
             lookback_window = int(config_json.get("lookback_window", 90))
             rebalance_days = int(config_json.get("rebalance_days", 21))
             top_n = int(config_json.get("top_n", 3))
+
             if not tickers or not isinstance(tickers, list):
                 raise serializers.ValidationError("portfolio_momentum requires config_json.tickers.")
+            if lookback_window <= 1:
+                raise serializers.ValidationError("lookback_window must be greater than 1.")
+            if rebalance_days <= 0:
+                raise serializers.ValidationError("rebalance_days must be positive.")
+            if top_n <= 0:
+                raise serializers.ValidationError("top_n must be positive.")
+
             attrs["config_json"] = {
                 "tickers": [str(t).strip().upper() for t in tickers if str(t).strip()],
                 "lookback_window": lookback_window,

@@ -1,7 +1,11 @@
 import axios from "axios";
 
+const API_BASE_URL =
+  (import.meta as ImportMeta & { env?: Record<string, string> }).env?.VITE_API_BASE_URL ||
+  "http://localhost:8000/api/";
+
 const API = axios.create({
-  baseURL: "http://localhost:8000/api/",
+  baseURL: API_BASE_URL,
   headers: {
     "Content-Type": "application/json",
   },
@@ -60,56 +64,46 @@ export const getDCFValuation = (ticker: string) =>
 export const getComparisonVisuals = (tickers: string[]) =>
   API.post("companies/compare-visuals/", { tickers, period_type: "annual" });
 
-export const exportCompanyReportUrl = (ticker: string, format: "json" | "markdown" = "json") =>
-  `http://localhost:8000/api/reports/company/${ticker}/export/?format=${format}`;
-
+export const exportCompanyReportUrl = (
+  ticker: string,
+  format: "json" | "markdown" = "json"
+) => `${API_BASE_URL}reports/company/${ticker}/export/?format=${format}`;
 
 // ---- BACKTESTING ----
-// export const runBacktest = (payload: {
-//   ticker: string;
-//   strategy_type: "sma_crossover" | "support_resistance_rsi_volume";
-//   start_date: string;
-//   end_date: string;
-//   initial_capital: number;
-//   position_size: number;
-//   commission_bps: number;
-//   resolution?: "D";
-//   async_mode?: boolean;
-//   use_stored_data?: boolean;
-//   benchmark_symbol?: string;
-//   config_json:
-//     | {
-//         short_window: number;
-//         long_window: number;
-//       }
-//     | {
-//         support_window: number;
-//         resistance_window: number;
-//         rsi_window: number;
-//         rsi_buy: number;
-//         rsi_sell: number;
-//         volume_window: number;
-//         volume_multiplier: number;
-//         buy_tolerance_pct: number;
-//         sell_tolerance_pct: number;
-//       };
-// }) =>
-//   API.post("backtests/run/", {
-//     resolution: "D",
-//     async_mode: true,
-//     use_stored_data: true,
-//     benchmark_symbol: "",
-//     ...payload,
-//   });
-
 export const listBacktestRuns = (ticker = "", limit = 20) =>
   API.get(`backtests/runs/?ticker=${encodeURIComponent(ticker)}&limit=${limit}`);
 
 export const getBacktestRun = (runId: string) =>
   API.get(`backtests/runs/${runId}/`);
 
-// ---- PORTFOLIO ----
+export const runBacktest = (payload: {
+  ticker: string;
+  strategy_type:
+    | "sma_crossover"
+    | "support_resistance_rsi_volume"
+    | "momentum"
+    | "mean_reversion"
+    | "portfolio_momentum";
+  start_date: string;
+  end_date: string;
+  initial_capital: number;
+  position_size: number;
+  commission_bps: number;
+  resolution?: "D";
+  async_mode?: boolean;
+  use_stored_data?: boolean;
+  benchmark_symbol?: string;
+  config_json: Record<string, unknown>;
+}) =>
+  API.post("backtests/run/", {
+    resolution: "D",
+    async_mode: true,
+    use_stored_data: true,
+    benchmark_symbol: "",
+    ...payload,
+  });
 
+// ---- PORTFOLIO ----
 export const getPortfolioActions = (query: string, limit = 10) =>
   API.post("portfolio/actions/", { query, limit });
 
@@ -146,33 +140,6 @@ export const chatQuery = (message: string) =>
 // ---- TICKER UNIVERSE SEARCH ----
 export const searchTickerUniverse = (q: string, limit = 10) =>
   API.get(`ticker-universe/search/?q=${encodeURIComponent(q)}&limit=${limit}`);
-
-export const runBacktest = (payload: {
-  ticker: string;
-  strategy_type:
-    | "sma_crossover"
-    | "support_resistance_rsi_volume"
-    | "momentum"
-    | "mean_reversion"
-    | "portfolio_momentum";
-  start_date: string;
-  end_date: string;
-  initial_capital: number;
-  position_size: number;
-  commission_bps: number;
-  resolution?: "D";
-  async_mode?: boolean;
-  use_stored_data?: boolean;
-  benchmark_symbol?: string;
-  config_json: Record<string, unknown>;
-}) =>
-  API.post("backtests/run/", {
-    resolution: "D",
-    async_mode: true,
-    use_stored_data: true,
-    benchmark_symbol: "",
-    ...payload,
-  });
 
 export const getSystemMetrics = () => API.get("system/metrics/");
 

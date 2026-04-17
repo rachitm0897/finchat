@@ -82,8 +82,13 @@ class IngestionResult:
 @dataclass(slots=True)
 class TickerSearchResult:
     ticker: str
+    symbol: str
     name: str
+    description: str
     exchange: str
+    type: str
+    currency: str
+    country: str
     source: str
     is_ingested: bool
 
@@ -106,14 +111,21 @@ class FinnhubTickerSearchService:
         payload = response.payload or {}
         raw_results = payload.get("result") if isinstance(payload, dict) else []
 
+        candidate_symbols = [
+            str(item.get("symbol") or "").strip().upper()
+            for item in raw_results
+            if isinstance(item, dict)
+        ]
+
         ingested_tickers = set(
             Company.objects.filter(
-                ticker__in=[
-                    str(item.get("symbol") or "").strip().upper()
-                    for item in raw_results
-                    if isinstance(item, dict)
-                ]
+                ticker__in=candidate_symbols
             ).values_list("ticker", flat=True)
+        )
+        ingested_symbols = set(
+            Company.objects.filter(
+                finnhub_symbol__in=candidate_symbols
+            ).values_list("finnhub_symbol", flat=True)
         )
 
         results: list[TickerSearchResult] = []
@@ -123,24 +135,30 @@ class FinnhubTickerSearchService:
             if not isinstance(item, dict):
                 continue
 
-            ticker = str(item.get("symbol") or "").strip().upper()
-            name = str(item.get("description") or "").strip()
-            exchange = str(item.get("displaySymbol") or item.get("type") or "").strip()
+            symbol = str(item.get("symbol") or "").strip().upper()
+            description = str(item.get("description") or "").strip()
+            exchange = str(item.get("displaySymbol") or item.get("mic") or "").strip()
+            instrument_type = str(item.get("type") or "").strip()
+            currency = str(item.get("currency") or "").strip().upper()
+            country = str(item.get("country") or "").strip().upper()
 
-            if not ticker:
-                continue
-            if ticker in seen:
+            if not symbol or symbol in seen:
                 continue
 
-            seen.add(ticker)
+            seen.add(symbol)
 
             results.append(
                 TickerSearchResult(
-                    ticker=ticker,
-                    name=name or ticker,
+                    ticker=symbol,
+                    symbol=symbol,
+                    name=description or symbol,
+                    description=description or symbol,
                     exchange=exchange,
+                    type=instrument_type,
+                    currency=currency,
+                    country=country,
                     source="finnhub",
-                    is_ingested=ticker in ingested_tickers,
+                    is_ingested=(symbol in ingested_tickers or symbol in ingested_symbols),
                 )
             )
 
@@ -285,27 +303,43 @@ class CompanyIngestionService:
         ticker: str,
         profile_payload: dict[str, Any],
     ) -> tuple[Company, bool]:
+        canonical_symbol = str(profile_payload.get("ticker") or ticker).strip().upper()
+        requested_symbol = ticker.strip().upper()
+
         defaults = {
-            "finnhub_symbol": str(profile_payload.get("ticker") or ticker).strip().upper(),
-            "name": str(profile_payload.get("name") or ticker).strip(),
+            "finnhub_symbol": canonical_symbol,
+            "name": str(profile_payload.get("name") or canonical_symbol).strip(),
             "country": str(profile_payload.get("country") or "").strip(),
             "currency_code": str(profile_payload.get("currency") or "").strip().upper(),
             "exchange": str(profile_payload.get("exchange") or "").strip(),
             "primary_exchange": str(profile_payload.get("exchange") or "").strip(),
             "ipo_date": _safe_date(profile_payload.get("ipo")),
-            "market_identifier_code": str(profile_payload.get("marketCapitalization") or "").strip()[:32]
-            if False else "",
+            "market_identifier_code": "",
             "logo_url": str(profile_payload.get("logo") or "").strip(),
             "web_url": str(profile_payload.get("weburl") or "").strip(),
             "industry": str(profile_payload.get("finnhubIndustry") or "").strip(),
             "is_active": True,
         }
 
-        company, created = Company.objects.update_or_create(
-            ticker=ticker,
-            defaults=defaults,
+        company = (
+            Company.objects.filter(ticker=canonical_symbol).first()
+            or Company.objects.filter(finnhub_symbol=canonical_symbol).first()
+            or Company.objects.filter(ticker=requested_symbol).first()
+            or Company.objects.filter(finnhub_symbol=requested_symbol).first()
         )
-        return company, created
+
+        if company is None:
+            company = Company.objects.create(
+                ticker=canonical_symbol,
+                **defaults,
+            )
+            return company, True
+
+        company.ticker = canonical_symbol
+        for field, value in defaults.items():
+            setattr(company, field, value)
+        company.save()
+        return company, False
 
     @transaction.atomic
     def _ingest_profile_snapshot(

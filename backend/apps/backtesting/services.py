@@ -179,9 +179,15 @@ class StrategyLibrary:
         *,
         rows: list[dict[str, Any]],
         lookback_window: int,
-        breakout_threshold_pct: float,
-        exit_lookback_window: int,
+        breakout_threshold_pct: float = 0.0,
+        exit_lookback_window: int | None = None,
     ) -> list[dict[str, Any]]:
+        if lookback_window <= 1:
+            raise ValueError("lookback_window must be greater than 1.")
+
+        if exit_lookback_window is None:
+            exit_lookback_window = max(5, lookback_window // 2)
+
         closes = [float(row["close"]) for row in rows]
         highs = [float(row["high"]) for row in rows]
         breakout_levels = _rolling_max(highs, lookback_window)
@@ -235,11 +241,19 @@ class StrategyLibrary:
     def mean_reversion_details(
         *,
         rows: list[dict[str, Any]],
-        mean_window: int,
-        std_window: int,
+        mean_window: int | None = None,
+        std_window: int | None = None,
+        lookback_window: int | None = None,
         z_entry: float,
         z_exit: float,
     ) -> list[dict[str, Any]]:
+        fallback_window = int(lookback_window or 20)
+        mean_window = int(mean_window or fallback_window)
+        std_window = int(std_window or fallback_window)
+
+        if mean_window <= 1 or std_window <= 1:
+            raise ValueError("mean_window and std_window must be greater than 1.")
+
         closes = [float(row["close"]) for row in rows]
         mean_values = _rolling_mean(closes, mean_window)
 
@@ -514,15 +528,25 @@ class BacktestExecutionService:
                 buy_tolerance_pct=float(config_json["buy_tolerance_pct"]),
                 sell_tolerance_pct=float(config_json["sell_tolerance_pct"]),
             )
+
         if strategy_type == "momentum":
             return StrategyLibrary.momentum_details(
                 rows=rows,
                 lookback_window=int(config_json.get("lookback_window", 90)),
+                breakout_threshold_pct=float(config_json.get("breakout_threshold_pct", 0.0)),
+                exit_lookback_window=int(
+                    config_json.get(
+                        "exit_lookback_window",
+                        max(5, int(config_json.get("lookback_window", 90)) // 2),
+                    )
+                ),
             )
 
         if strategy_type == "mean_reversion":
             return StrategyLibrary.mean_reversion_details(
                 rows=rows,
+                mean_window=int(config_json.get("mean_window", config_json.get("lookback_window", 20))),
+                std_window=int(config_json.get("std_window", config_json.get("lookback_window", 20))),
                 lookback_window=int(config_json.get("lookback_window", 20)),
                 z_entry=float(config_json.get("z_entry", 1.5)),
                 z_exit=float(config_json.get("z_exit", 0.25)),

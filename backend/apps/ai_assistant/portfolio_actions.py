@@ -6,8 +6,12 @@ from functools import lru_cache
 from typing import Any
 
 from django.conf import settings
-from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, Field
+
+try:
+    from langchain_openai import ChatOpenAI
+except Exception:
+    ChatOpenAI = None
 
 from apps.analytics.selectors import get_latest_metric_snapshot
 from apps.market_data.models import Company
@@ -26,9 +30,15 @@ def _provider() -> str:
 
 
 @lru_cache(maxsize=1)
-def _chat_model() -> ChatOpenAI:
+def _chat_model():
+    if ChatOpenAI is None:
+        raise ValueError("langchain_openai is not installed correctly.")
+
     provider = _provider()
     model_name = (getattr(settings, "LLM_MODEL_NAME", "") or os.getenv("LLM_MODEL_NAME", "")).strip()
+
+    if not model_name:
+        raise ValueError("LLM_MODEL_NAME is not configured.")
 
     if provider == "openrouter":
         api_key = (
@@ -36,6 +46,9 @@ def _chat_model() -> ChatOpenAI:
             or os.getenv("OPENROUTER_API_KEY", "")
             or os.getenv("LLM_API_KEY", "")
         )
+        if not api_key:
+            raise ValueError("LLM_API_KEY or OPENROUTER_API_KEY is not configured.")
+
         return ChatOpenAI(
             model=model_name,
             api_key=api_key,
@@ -48,6 +61,9 @@ def _chat_model() -> ChatOpenAI:
         or getattr(settings, "LLM_API_KEY", "")
         or os.getenv("LLM_API_KEY", "")
     )
+    if not api_key:
+        raise ValueError("OPENAI_API_KEY or LLM_API_KEY is not configured.")
+
     return ChatOpenAI(
         model=model_name,
         api_key=api_key,

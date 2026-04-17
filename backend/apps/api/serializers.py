@@ -32,8 +32,13 @@ class TickerUniverseSearchQuerySerializer(serializers.Serializer):
 
 class TickerUniverseSearchResultSerializer(serializers.Serializer):
     ticker = serializers.CharField()
+    symbol = serializers.CharField()
     name = serializers.CharField()
+    description = serializers.CharField()
     exchange = serializers.CharField()
+    type = serializers.CharField()
+    currency = serializers.CharField()
+    country = serializers.CharField()
     source = serializers.CharField()
     is_ingested = serializers.BooleanField()
 

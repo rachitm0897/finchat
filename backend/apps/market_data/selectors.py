@@ -9,17 +9,26 @@ def search_companies(query: str, limit: int = 20):
     queryset = Company.objects.all().order_by("ticker")
 
     if query:
+        normalized = query.strip()
         queryset = queryset.filter(
-            Q(ticker__icontains=query)
-            | Q(name__icontains=query)
-            | Q(finnhub_symbol__icontains=query)
+            Q(ticker__icontains=normalized)
+            | Q(name__icontains=normalized)
+            | Q(finnhub_symbol__icontains=normalized)
         ).order_by("ticker")
 
     return list(queryset[:limit])
 
 
 def get_company_by_ticker(ticker: str) -> Company | None:
-    return Company.objects.filter(ticker=ticker.strip().upper()).first()
+    normalized = ticker.strip().upper()
+    if not normalized:
+        return None
+
+    return (
+        Company.objects.filter(ticker=normalized).first()
+        or Company.objects.filter(finnhub_symbol=normalized).first()
+        or Company.objects.filter(name__iexact=ticker.strip()).first()
+    )
 
 
 def get_company_latest_profile_snapshot(company: Company):

@@ -1,168 +1,254 @@
-import { useState } from "react";
-import { computeAnalytics, getJobStatus, ingestCompany, searchCompany, searchTickerUniverse } from "../api/api";
-import type { CompanySummary, JobStatus } from "../types";
-// import { searchTickerUniverse } from "../api/api";
+import { useEffect, useMemo, useState } from "react";
+import {
+  computeAnalytics,
+  getJobStatus,
+  ingestCompany,
+  listAvailableCompanies,
+  searchTickerUniverse,
+} from "../api/api";
+import type { CompanySummary, JobStatus, TickerUniverseResult } from "../types";
+
 type Props = {
   ticker: string;
   setTicker: (t: string) => void;
-  onREFRESHRequested: () => void;
+  onRefreshRequested: () => void;
 };
 
-export default function TickerPanel({ ticker, setTicker, onREFRESHRequested }: Props) {
+const FINAL_JOB_STATES = ["success", "failed", "cancelled"] as const;
+
+function formatJobLabel(job: JobStatus | null) {
+  if (!job) return "idle";
+  return job.status;
+}
+
+export default function TickerPanel({ ticker, setTicker, onRefreshRequested }: Props) {
   const [query, setQuery] = useState(ticker);
-  const [results, setResults] = useState<CompanySummary[]>([]);
+  const [results, setResults] = useState<TickerUniverseResult[]>([]);
+  const [availableCompanies, setAvailableCompanies] = useState<CompanySummary[]>([]);
   const [lookupLoading, setLookupLoading] = useState(false);
   const [loading, setLoading] = useState(false);
   const [ingestJob, setIngestJob] = useState<JobStatus | null>(null);
   const [computeJob, setComputeJob] = useState<JobStatus | null>(null);
 
-  const pollJob = async (jobId: string, onDone?: () => void): Promise<JobStatus | null> => {
+  useEffect(() => {
+    setQuery(ticker);
+  }, [ticker]);
+
+  const loadAvailableCompanies = async () => {
+    try {
+      const res = await listAvailableCompanies(250);
+      setAvailableCompanies(res.data?.data?.results || []);
+    } catch (err) {
+      console.error("Failed to load available companies:", err);
+      setAvailableCompanies([]);
+    }
+  };
+
+  useEffect(() => {
+    void loadAvailableCompanies();
+  }, []);
+
+  const pollJob = async (jobId: string, onDone?: () => Promise<void> | void): Promise<JobStatus | null> => {
     let attempts = 0;
-    while (attempts < 60) {
+
+    while (attempts < 90) {
       attempts += 1;
       try {
         const res = await getJobStatus(jobId);
         const job = res.data.data as JobStatus;
-        if (["success", "failed", "cancelled"].includes(job.status)) {
-          if (job.status === "success" && onDone) onDone();
+
+        if (FINAL_JOB_STATES.includes(job.status as (typeof FINAL_JOB_STATES)[number])) {
+          if (job.status === "success" && onDone) {
+            await onDone();
+          }
           return job;
         }
       } catch (err) {
         console.error("Job polling failed:", err);
         return null;
       }
+
       await new Promise((resolve) => setTimeout(resolve, 2000));
     }
+
     return null;
   };
 
   const handleLookup = async () => {
     const trimmed = query.trim();
-    if (!trimmed) return;
+    if (!trimmed) {
+      setResults([]);
+      return;
+    }
 
     setLookupLoading(true);
 
     try {
       const res = await searchTickerUniverse(trimmed, 10);
-
       const rows = res.data?.data?.results || [];
-
-      const options = rows.map((row: any) => ({
-        id: row.symbol || row.ticker,
-        ticker: row.symbol || row.ticker,
-        name: row.description || row.name,
-      }));
-
-      setResults(options);
+      setResults(rows);
     } catch (err) {
       console.error("Ticker search failed:", err);
       setResults([]);
+    } finally {
+      setLookupLoading(false);
     }
-
-    setLookupLoading(false);
   };
 
-  const handleIngest = async () => {
-    if (!ticker.trim()) return;
+  const runIngest = async (nextTicker: string) => {
+    const selectedTicker = nextTicker.trim().toUpperCase();
+    if (!selectedTicker) return;
+
     setLoading(true);
     setIngestJob(null);
+
     try {
-      const res = await ingestCompany(ticker, true);
-      const payload = res.data.data;
-      if (payload.mode === "async" && payload.job_id) {
-        const finalJob = await pollJob(payload.job_id, onREFRESHRequested);
+      const res = await ingestCompany(selectedTicker, true);
+      const payload = res.data?.data;
+
+      if (payload?.mode === "async" && payload?.job_id) {
+        const finalJob = await pollJob(payload.job_id, async () => {
+          await loadAvailableCompanies();
+          onRefreshRequested();
+        });
         if (finalJob) setIngestJob(finalJob);
       }
     } catch (err: any) {
       console.error("INGESTION failed:", err);
       alert(err.response?.data ? JSON.stringify(err.response.data, null, 2) : "INGESTION failed");
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
-  const handleCompute = async () => {
+  const runCompute = async () => {
     if (!ticker.trim()) return;
+
     setLoading(true);
     setComputeJob(null);
+
     try {
       const res = await computeAnalytics(ticker, true);
-      const payload = res.data.data;
-      if (payload.mode === "async" && payload.job_id) {
-        const finalJob = await pollJob(payload.job_id, onREFRESHRequested);
+      const payload = res.data?.data;
+
+      if (payload?.mode === "async" && payload?.job_id) {
+        const finalJob = await pollJob(payload.job_id, onRefreshRequested);
         if (finalJob) setComputeJob(finalJob);
       }
     } catch (err: any) {
       console.error("ANALYTICS failed:", err);
       alert(err.response?.data ? JSON.stringify(err.response.data, null, 2) : "ANALYTICS failed");
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
-  return (
-    <section className="panel toolbar-panel">
-      <div className="toolbar-grid">
-        <div className="toolbar-main">
-          <div className="toolbar-label">SECURITY LOOKUP</div>
-          <div className="toolbar-input-row">
-            <input
-              value={query}
-              onChange={(e) => setQuery(e.target.value.toUpperCase())}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") void handleLookup();
-              }}
-              placeholder="Search ticker (AAPL, TSLA...)"
-            />
-            <button type="button" className="app-button" onClick={handleLookup} disabled={lookupLoading}>
-              {lookupLoading ? "SEARCHing" : "SEARCH"}
-            </button>
-          </div>
-          <div className="toolbar-results">
-            {results.length === 0 ? (
-              <div className="toolbar-results-empty">No search results loaded.</div>
-            ) : (
-              results.slice(0, 6).map((company) => (
-                <button
-                  type="button"
-                  key={company.id}
-                  className={`search-result ${ticker === company.ticker ? "active" : ""}`}
-                  onClick={async () => {
-                    setTicker(company.ticker);
-                    setQuery(company.ticker);
+  const activeResultCount = useMemo(() => results.slice(0, 6).length, [results]);
 
-                    await ingestCompany(company.ticker, true);
-                    onREFRESHRequested();
-                  }}
-                >
-                  <span className="search-result-symbol">{company.ticker}</span>
-                  <span className="search-result-name">{company.name}</span>
-                </button>
-              ))
-            )}
+  return (
+    <section className="panel panel-tight toolbar-panel">
+      <div className="panel-header panel-header-tight">
+        <div>
+          <h3>SECURITY CONTROL</h3>
+          <div className="panel-subtitle">
+            Search universe, switch active ticker, ingest data, compute analytics
+          </div>
+        </div>
+        <div className="toolbar-status-row">
+          <span className={`status-pill ${formatJobLabel(ingestJob)}`}>INGEST {formatJobLabel(ingestJob)}</span>
+          <span className={`status-pill ${formatJobLabel(computeJob)}`}>ANALYTICS {formatJobLabel(computeJob)}</span>
+        </div>
+      </div>
+
+      <div className="toolbar-grid toolbar-grid-bloomberg">
+        <div className="toolbar-main">
+          <div className="toolbar-block">
+            <div className="toolbar-label">LOOKUP UNIVERSE</div>
+            <div className="toolbar-input-row">
+              <input
+                value={query}
+                onChange={(e) => setQuery(e.target.value.toUpperCase())}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") void handleLookup();
+                }}
+                placeholder="Search ticker or company"
+              />
+              <button type="button" className="app-button" onClick={handleLookup} disabled={lookupLoading}>
+                {lookupLoading ? "SEARCHING" : "SEARCH"}
+              </button>
+            </div>
+
+            <div className="toolbar-results toolbar-results-list">
+              {activeResultCount === 0 ? (
+                <div className="empty-state compact">No search results loaded.</div>
+              ) : (
+                results.slice(0, 6).map((company, idx) => {
+                  const resolvedTicker = (company.symbol || company.ticker || "").toUpperCase();
+                  const resolvedName = company.description || company.name || "Unknown company";
+
+                  return (
+                    <button
+                      type="button"
+                      key={`${resolvedTicker}-${idx}`}
+                      className={`search-result ${ticker === resolvedTicker ? "active" : ""}`}
+                      onClick={() => {
+                        setTicker(resolvedTicker);
+                        setQuery(resolvedTicker);
+                      }}
+                    >
+                      <span className="search-result-symbol">{resolvedTicker}</span>
+                      <span className="search-result-name">{resolvedName}</span>
+                    </button>
+                  );
+                })
+              )}
+            </div>
           </div>
         </div>
 
         <div className="toolbar-side">
           <div className="toolbar-side-block">
-            <div className="toolbar-label">SELECTED</div>
+            <div className="toolbar-label">ACTIVE TICKER</div>
             <div className="ticker-readout">{ticker || "-"}</div>
-            <div className="toolbar-actions">
-              <button type="button" className="app-button" onClick={handleIngest} disabled={loading}>
-                INGEST DATA
-              </button>
-              <button type="button" className="app-button app-button-secondary" onClick={handleCompute} disabled={loading}>
-                COMPUTE METRICS
-              </button>
-            </div>
           </div>
 
-          <div className="toolbar-side-block status-stack">
-            <div className="status-line">
-              <span>INGESTION</span>
-              <strong>{ingestJob?.status || "idle"}</strong>
-            </div>
-            <div className="status-line">
-              <span>ANALYTICS</span>
-              <strong>{computeJob?.status || "idle"}</strong>
+          <div className="toolbar-side-block">
+            <div className="toolbar-label">INGESTED UNIVERSE</div>
+            <select
+              value={ticker}
+              onChange={(e) => {
+                const nextTicker = e.target.value.toUpperCase();
+                setTicker(nextTicker);
+                setQuery(nextTicker);
+              }}
+            >
+              <option value="">SELECT AVAILABLE TICKER</option>
+              {availableCompanies.map((company) => (
+                <option key={company.id} value={company.ticker}>
+                  {company.ticker} - {company.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="toolbar-side-block">
+            <div className="toolbar-actions toolbar-actions-stacked">
+              <button
+                type="button"
+                className="app-button"
+                onClick={() => void runIngest(ticker)}
+                disabled={loading}
+              >
+                INGEST DATA
+              </button>
+              <button
+                type="button"
+                className="app-button app-button-secondary"
+                onClick={() => void runCompute()}
+                disabled={loading}
+              >
+                COMPUTE METRICS
+              </button>
             </div>
           </div>
         </div>

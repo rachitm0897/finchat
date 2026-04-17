@@ -47,6 +47,18 @@ export type CompanySummary = {
   updated_at?: string;
 };
 
+export type TickerUniverseResult = {
+  ticker: string;
+  symbol?: string;
+  name: string;
+  description?: string;
+  exchange?: string;
+  type?: string;
+  currency?: string;
+  country?: string;
+  is_ingested?: boolean;
+};
+
 export type ChatSession = {
   id: string;
   title: string;
@@ -96,8 +108,11 @@ export type BacktestMetricMap = {
 
 export type BacktestCurvePoint = {
   date: string;
-  equity?: number;
+  open?: number;
+  high?: number;
+  low?: number;
   close?: number;
+  equity?: number;
   position?: number;
   drawdown_pct?: number;
   event?: string;

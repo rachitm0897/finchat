@@ -1,6 +1,6 @@
 import {
   ResponsiveContainer,
-  LineChart,
+  ComposedChart,
   Line,
   XAxis,
   YAxis,
@@ -24,18 +24,25 @@ export default function SignalChart({ data }: Props) {
     .map((d) => ({ ...d, markerY: d.close }));
 
   return (
-    <div style={{ width: "100%", height: 300 }}>
+    <div style={{ width: "100%", height: 320 }}>
       <ResponsiveContainer>
-        <LineChart data={data}>
-          <CartesianGrid stroke="#1f2937" strokeDasharray="3 3" />
-          <XAxis dataKey="date" tick={{ fontSize: 11 }} />
-          <YAxis tick={{ fontSize: 11 }} />
-          <Tooltip />
-          <Line type="monotone" dataKey="close" stroke="#60a5fa" strokeWidth={2} dot={false} />
-          <Scatter data={buySignals} dataKey="markerY" fill="#22c55e" />
-          <Scatter data={sellSignals} dataKey="markerY" fill="#ef4444" />
-          <Brush dataKey="date" height={20} stroke="#64748b" />
-        </LineChart>
+        <ComposedChart data={data}>
+          <CartesianGrid stroke="#1c2632" strokeDasharray="2 2" />
+          <XAxis dataKey="date" tick={{ fontSize: 11, fill: "#8fa2b7" }} minTickGap={24} />
+          <YAxis tick={{ fontSize: 11, fill: "#8fa2b7" }} />
+          <Tooltip
+            contentStyle={{
+              background: "#0a1118",
+              border: "1px solid #233140",
+              borderRadius: 8,
+              color: "#d8e4ef",
+            }}
+          />
+          <Line type="monotone" dataKey="close" stroke="#d8e4ef" strokeWidth={1.8} dot={false} />
+          <Scatter data={buySignals} dataKey="markerY" fill="#3dd9a4" />
+          <Scatter data={sellSignals} dataKey="markerY" fill="#ff6b7a" />
+          <Brush dataKey="date" height={18} stroke="#41576d" travellerWidth={10} />
+        </ComposedChart>
       </ResponsiveContainer>
     </div>
   );

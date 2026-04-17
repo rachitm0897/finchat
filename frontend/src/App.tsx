@@ -47,7 +47,11 @@ function App() {
         />
       }
     >
-      <TickerPanel ticker={ticker} setTicker={setTicker} onRefreshRequested={handleRefreshRequested} />
+      <TickerPanel
+        ticker={ticker}
+        setTicker={setTicker}
+        onRefreshRequested={handleRefreshRequested}
+      />
 
       {activeView === "dashboard" && <DashboardPage ticker={ticker} refreshKey={refreshKey} />}
       {activeView === "analysis" && <CompanyAnalysisPage ticker={ticker} />}
@@ -56,7 +60,7 @@ function App() {
       {activeView === "chat" && (
         <WorkspacePage
           title="Research assistant"
-          description="Compact analyst chat inside the platform with deterministic tool-backed answers."
+          description="Tool-backed analyst chat with session history and company context."
         >
           <ChatPanel ticker={ticker} />
         </WorkspacePage>

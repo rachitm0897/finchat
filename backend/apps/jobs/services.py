@@ -1,19 +1,18 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date
+from decimal import Decimal
 from typing import Any
 
 from django.db import transaction
 from django.utils import timezone
 
 from apps.analytics.services import MetricComputationService
+from apps.backtesting.services import BacktestExecutionService
 from apps.jobs.models import JobRun
 from apps.market_data.models import Company
 from apps.market_data.services import CompanyIngestionService
-from datetime import date, datetime
-from decimal import Decimal
-from apps.backtesting.services import BacktestExecutionService
 
 @dataclass(slots=True)
 class JobDispatchResult:

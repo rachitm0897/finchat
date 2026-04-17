@@ -3,15 +3,17 @@ from __future__ import annotations
 from rest_framework import status
 from rest_framework.views import APIView
 
-from apps.api.backtesting_serializers import BacktestRunQuerySerializer, BacktestRunRequestSerializer, BacktestRunSerializer
+from apps.api.backtesting_serializers import (
+    BacktestRunQuerySerializer,
+    BacktestRunRequestSerializer,
+    BacktestRunSerializer,
+)
 from apps.api.views import error_response, success_response
 from apps.backtesting.selectors import get_backtest_run_by_id, list_backtest_runs
-from apps.backtesting.services import BacktestExecutionService
+from apps.backtesting.services import BacktestExecutionService, PortfolioBacktestService
 from apps.jobs.selectors import get_job_run_by_id
 from apps.jobs.services import JobDispatchService
 from apps.market_data.models import Company
-from apps.backtesting.services import BacktestExecutionService, PortfolioBacktestService
-
 
 
 class BacktestRunView(APIView):
@@ -28,15 +30,17 @@ class BacktestRunView(APIView):
             )
 
         payload = serializer.validated_data
-        company = Company.objects.filter(ticker=payload["ticker"]).first()
-        if company is None:
-            return error_response(
-                code="not_found",
-                message=f"Company with ticker '{payload['ticker']}' was not found.",
-                http_status=status.HTTP_404_NOT_FOUND,
-            )
 
-        if payload["async_mode"]:
+        if payload["strategy_type"] != "portfolio_momentum":
+            company = Company.objects.filter(ticker=payload["ticker"]).first()
+            if company is None:
+                return error_response(
+                    code="not_found",
+                    message=f"Company with ticker '{payload['ticker']}' was not found.",
+                    http_status=status.HTTP_404_NOT_FOUND,
+                )
+
+        if payload["async_mode"] and payload["strategy_type"] != "portfolio_momentum":
             try:
                 dispatch = JobDispatchService().dispatch_backtest_job(
                     ticker=payload["ticker"],
@@ -71,6 +75,7 @@ class BacktestRunView(APIView):
                     details={"error": str(exc)},
                     http_status=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 )
+
         if payload["strategy_type"] == "portfolio_momentum":
             try:
                 portfolio_payload = PortfolioBacktestService().run_portfolio_momentum(
@@ -98,6 +103,7 @@ class BacktestRunView(APIView):
             )
 
         try:
+            company = Company.objects.get(ticker=payload["ticker"])
             strategy_service = BacktestExecutionService()
             strategy_config = strategy_service.build_strategy_config(
                 strategy_type=payload["strategy_type"],
@@ -131,7 +137,6 @@ class BacktestRunView(APIView):
                 details={"error": str(exc)},
                 http_status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
-        
 
         run = get_backtest_run_by_id(result.backtest_run_id)
         return success_response(

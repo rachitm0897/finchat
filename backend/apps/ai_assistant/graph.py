@@ -5,13 +5,28 @@ import re
 from functools import lru_cache
 from typing import Any
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from apps.core.observability import ObservabilityService, timed_tool_execution
-from django.conf import settings
-from langchain_core.messages import HumanMessage, SystemMessage
-from langchain_openai import ChatOpenAI
-from langgraph.graph import END, START, StateGraph
 
-from apps.ai_assistant.advanced_tools import get_analysis_summary_tool, get_peer_ranking_tool, get_scenario_analysis_tool
+from django.conf import settings
+
+from apps.core.observability import ObservabilityService, timed_tool_execution
+
+try:
+    from langchain_core.messages import HumanMessage, SystemMessage
+    from langgraph.graph import END, START, StateGraph
+    from langchain_openai import ChatOpenAI
+except Exception:
+    HumanMessage = None
+    SystemMessage = None
+    StateGraph = None
+    START = None
+    END = None
+    ChatOpenAI = None
+
+from apps.ai_assistant.advanced_tools import (
+    get_analysis_summary_tool,
+    get_peer_ranking_tool,
+    get_scenario_analysis_tool,
+)
 from apps.ai_assistant.domain_services import (
     AnalyticsReadService,
     BacktestBridgeService,
@@ -108,7 +123,12 @@ def _get_provider() -> str:
 
 
 @lru_cache(maxsize=1)
-def get_chat_model() -> ChatOpenAI:
+def get_chat_model():
+    if ChatOpenAI is None:
+        raise ValueError(
+            "langchain_openai / langgraph dependencies are not installed correctly."
+        )
+
     provider = _get_provider()
     model_name = (getattr(settings, "LLM_MODEL_NAME", "") or os.getenv("LLM_MODEL_NAME", "")).strip()
 

@@ -1,12 +1,10 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
-from apps.analytics.selectors import get_latest_metric_snapshot
-from apps.market_data.models import Company
 from apps.analytics.selectors import get_latest_metrics_map
+from apps.market_data.models import Company
 from apps.core.cache_keys import analysis_summary_key
 from apps.core.cache_utils import CacheService
 
@@ -203,8 +201,8 @@ class SmartAnalysisService:
         tickers: list[str],
         metric_codes: list[str] | None = None,
     ) -> dict[str, Any]:
-        normalized = []
-        seen = set()
+        normalized: list[str] = []
+        seen: set[str] = set()
         for item in tickers:
             t = item.strip().upper()
             if t and t not in seen:
@@ -217,6 +215,15 @@ class SmartAnalysisService:
         by_ticker = {c.ticker: c for c in companies}
         missing = [t for t in normalized if t not in by_ticker]
 
+        company_metrics_map: dict[str, dict[str, Any]] = {
+            ticker: get_latest_metrics_map(
+                company=company,
+                metric_codes=metric_codes,
+                period_type="annual",
+            )
+            for ticker, company in by_ticker.items()
+        }
+
         rankings: list[dict[str, Any]] = []
         composite_scores: dict[str, Decimal] = {ticker: Decimal("0") for ticker in by_ticker.keys()}
         composite_counts: dict[str, int] = {ticker: 0 for ticker in by_ticker.keys()}
@@ -224,7 +231,8 @@ class SmartAnalysisService:
         for metric_code in metric_codes:
             metric_rows = []
             for ticker, company in by_ticker.items():
-                value = _latest_metric_value_from_map(company, metric_code)
+                metrics_map = company_metrics_map.get(ticker, {})
+                value = _latest_metric_value_from_map(metrics_map, metric_code)
                 metric_rows.append(
                     {
                         "ticker": ticker,
@@ -242,13 +250,15 @@ class SmartAnalysisService:
                 reverse=(direction == "desc"),
             )
 
+            total_comparable = len(comparable_rows)
+
             for rank, row in enumerate(comparable_rows, start=1):
                 row["rank"] = rank
                 row["percentile"] = (
-                    (Decimal(len(comparable_rows) - rank) / Decimal(max(len(comparable_rows) - 1, 1))) * Decimal("100")
-                    if len(comparable_rows) > 1 else Decimal("100")
+                    (Decimal(total_comparable - rank) / Decimal(max(total_comparable - 1, 1))) * Decimal("100")
+                    if total_comparable > 1 else Decimal("100")
                 )
-                composite_scores[row["ticker"]] += Decimal(len(comparable_rows) - rank + 1)
+                composite_scores[row["ticker"]] += Decimal(total_comparable - rank + 1)
                 composite_counts[row["ticker"]] += 1
 
             for row in metric_rows:
@@ -275,10 +285,9 @@ class SmartAnalysisService:
 
         overall = []
         for ticker, company in by_ticker.items():
+            avg_score = None
             if composite_counts[ticker] > 0:
                 avg_score = composite_scores[ticker] / Decimal(composite_counts[ticker])
-            else:
-                avg_score = None
 
             overall.append(
                 {
@@ -320,11 +329,22 @@ class SmartAnalysisService:
         if latest_income is None:
             raise ValueError("No normalized income statement available for scenario analysis.")
 
+        scenario_metric_codes = [
+            "cashflow_fcf_margin",
+            "valuation_price_to_earnings",
+            "valuation_ev_to_fcf",
+        ]
+        metrics_map = get_latest_metrics_map(
+            company=company,
+            metric_codes=scenario_metric_codes,
+            period_type="annual",
+        )
+
         revenue = _to_decimal(latest_income.revenue)
         diluted_shares = _to_decimal(latest_income.weighted_average_diluted_shares)
-        fcf_margin = _latest_metric_value_from_map(company, "cashflow_fcf_margin")
-        current_pe = _latest_metric_value_from_map(company, "valuation_price_to_earnings")
-        current_ev_fcf = _latest_metric_value_from_map(company, "valuation_ev_to_fcf")
+        fcf_margin = _latest_metric_value_from_map(metrics_map, "cashflow_fcf_margin")
+        current_pe = _latest_metric_value_from_map(metrics_map, "valuation_price_to_earnings")
+        current_ev_fcf = _latest_metric_value_from_map(metrics_map, "valuation_ev_to_fcf")
 
         cash = _to_decimal(getattr(latest_balance, "cash_and_cash_equivalents", None)) if latest_balance else None
         short_term_investments = _to_decimal(getattr(latest_balance, "short_term_investments", None)) if latest_balance else None
@@ -345,9 +365,24 @@ class SmartAnalysisService:
         default_exit_multiple = current_ev_fcf if current_ev_fcf is not None else Decimal("18")
 
         scenarios = scenarios or [
-            {"name": "bear", "revenue_growth": "-0.03", "fcf_margin": str(max(fcf_margin - Decimal("0.03"), Decimal("0"))), "exit_multiple": str(max(default_exit_multiple - Decimal("4"), Decimal("8")))},
-            {"name": "base", "revenue_growth": "0.05", "fcf_margin": str(fcf_margin), "exit_multiple": str(default_exit_multiple)},
-            {"name": "bull", "revenue_growth": "0.10", "fcf_margin": str(fcf_margin + Decimal("0.03")), "exit_multiple": str(default_exit_multiple + Decimal("4"))},
+            {
+                "name": "bear",
+                "revenue_growth": "-0.03",
+                "fcf_margin": str(max(fcf_margin - Decimal("0.03"), Decimal("0"))),
+                "exit_multiple": str(max(default_exit_multiple - Decimal("4"), Decimal("8"))),
+            },
+            {
+                "name": "base",
+                "revenue_growth": "0.05",
+                "fcf_margin": str(fcf_margin),
+                "exit_multiple": str(default_exit_multiple),
+            },
+            {
+                "name": "bull",
+                "revenue_growth": "0.10",
+                "fcf_margin": str(fcf_margin + Decimal("0.03")),
+                "exit_multiple": str(default_exit_multiple + Decimal("4")),
+            },
         ]
 
         output_scenarios = []
